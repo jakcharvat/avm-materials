@@ -91,3 +91,67 @@ jobs:
             variational-algorithms/course/build/*.log
             variational-algorithms/course/build/*.blg
             variational-algorithms/course/build-summary.txt
+
+  release:
+    name: Publish PDFs as a release
+    needs: build
+    # Never release from pull requests; the reusable-call path (scheduled
+    # submodule bump) and pushes to main both qualify.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Check out repository (submodule pointer only)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Compare submodule commit with the latest release
+        id: check
+        run: |
+          current=$(git rev-parse HEAD:variational-algorithms)
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "tag=course-${current:0:7}" >> "$GITHUB_OUTPUT"
+          # Release tags are course-<submodule sha>, so the latest release
+          # tells us which submodule commit was last published.
+          latest_tag=$(gh release list --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || true)
+          previous=${latest_tag#course-}
+          echo "previous=$previous" >> "$GITHUB_OUTPUT"
+          if [ -n "$latest_tag" ] && [ "${current:0:${#previous}}" = "$previous" ]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "Latest release $latest_tag already covers submodule $current; nothing to publish."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "Latest release: ${latest_tag:-none}; publishing $current."
+          fi
+
+      - name: Download built PDFs
+        if: steps.check.outputs.publish == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: course-*
+          path: pdfs
+          merge-multiple: true
+
+      - name: Create release
+        if: steps.check.outputs.publish == 'true'
+        env:
+          TAG: ${{ steps.check.outputs.tag }}
+          CURRENT: ${{ steps.check.outputs.current }}
+          PREVIOUS: ${{ steps.check.outputs.previous }}
+          TARGET: ${{ inputs.ref || github.sha }}
+        run: |
+          upstream=https://github.com/jmarecek/variational-algorithms
+          notes="Built from [jmarecek/variational-algorithms@${CURRENT:0:7}]($upstream/commit/$CURRENT)."
+          if [ -n "$PREVIOUS" ]; then
+            notes=$(printf '%s\n\nChanges since the previous release: [%s...%s](%s/compare/%s...%s)' \
+              "$notes" "$PREVIOUS" "${CURRENT:0:7}" "$upstream" "$PREVIOUS" "${CURRENT:0:7}")
+          fi
+          gh release create "$TAG" pdfs/*.pdf \
+            --target "$TARGET" \
+            --title "Course PDFs ($(date -u +%Y-%m-%d), ${CURRENT:0:7})" \
+            --notes "$notes"

@@ -65,5 +65,7 @@ jobs:
     needs: update
     if: needs.update.outputs.changed == 'true'
     uses: ./.github/workflows/build.yml
+    permissions:
+      contents: write
     with:
       ref: ${{ needs.update.outputs.sha }}
