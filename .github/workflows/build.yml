@@ -30,7 +30,7 @@ jobs:
           apt-get install -y -qq --no-install-recommends git ca-certificates poppler-utils
 
       - name: Check out repository with submodule
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
           submodules: true
@@ -64,7 +64,7 @@ jobs:
 
       - name: Upload whole-course handout and slide deck
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: course-full
           path: |
@@ -74,7 +74,7 @@ jobs:
 
       - name: Upload per-chapter handouts and slides
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: course-chapters
           path: |
@@ -84,7 +84,7 @@ jobs:
 
       - name: Upload LaTeX logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: latex-logs
           path: |
@@ -106,7 +106,7 @@ jobs:
       GH_REPO: ${{ github.repository }}
     steps:
       - name: Check out repository (submodule pointer only)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
 
@@ -131,7 +131,7 @@ jobs:
 
       - name: Download built PDFs
         if: steps.check.outputs.publish == 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: course-*
           path: pdfs
