@@ -1,0 +1,93 @@
+name: Build course
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to build (defaults to the triggering commit)
+        type: string
+        required: false
+        default: ""
+
+jobs:
+  build:
+    name: Handouts and slides
+    runs-on: ubuntu-latest
+    # Full TeX Live: the course uses beamer, subfiles, pgfplots, tcolorbox,
+    # algorithm2e, qrcode, xy, ... so a slim install would need a long package list.
+    container: texlive/texlive:latest
+    steps:
+      # git must be present before checkout, otherwise actions/checkout falls
+      # back to a tarball download that cannot fetch submodules. pdfinfo is
+      # used by build.sh for its page-count summary.
+      - name: Install git and pdfinfo
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends git ca-certificates poppler-utils
+
+      - name: Check out repository with submodule
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          submodules: true
+
+      - name: Build whole course and every chapter
+        working-directory: variational-algorithms/course
+        run: |
+          set -o pipefail
+          ./build.sh all 2>&1 | tee build-summary.txt
+
+      - name: Verify every expected PDF was produced
+        # build.sh keeps going after a failed chapter and does not exit non-zero,
+        # so check its output and the resulting files ourselves.
+        working-directory: variational-algorithms/course
+        run: |
+          status=0
+          if grep -q '^FAILED:' build-summary.txt; then
+            echo "::error::build.sh reported failures (see above)"; status=1
+          fi
+          expected="handoutsbeamer overheadsbeamer"
+          for f in ch[0-9][0-9]_*.tex; do
+            ch=${f%.tex}
+            expected="$expected $ch slides_$ch"
+          done
+          for job in $expected; do
+            if [ ! -s "$job.pdf" ]; then
+              echo "::error::missing $job.pdf"; status=1
+            fi
+          done
+          exit $status
+
+      - name: Upload whole-course handout and slide deck
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: course-full
+          path: |
+            variational-algorithms/course/handoutsbeamer.pdf
+            variational-algorithms/course/overheadsbeamer.pdf
+          if-no-files-found: warn
+
+      - name: Upload per-chapter handouts and slides
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: course-chapters
+          path: |
+            variational-algorithms/course/ch[0-9][0-9]_*.pdf
+            variational-algorithms/course/slides_ch[0-9][0-9]_*.pdf
+          if-no-files-found: warn
+
+      - name: Upload LaTeX logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: latex-logs
+          path: |
+            variational-algorithms/course/build/*.log
+            variational-algorithms/course/build/*.blg
+            variational-algorithms/course/build-summary.txt

@@ -1,0 +1,69 @@
+name: Update course submodule
+
+on:
+  schedule:
+    # Runs in UTC. Once a day at 07:00 UTC; use "0 * * * *" for hourly.
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+# Only one update run at a time, so two runs never race on the push.
+concurrency:
+  group: update-submodule
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Bump variational-algorithms to latest main
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.bump.outputs.changed }}
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - name: Check out repository with submodule
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Fetch latest submodule commit
+        id: bump
+        run: |
+          old=$(git -C variational-algorithms rev-parse HEAD)
+          # Follows the `branch` set in .gitmodules (main).
+          git submodule update --remote --checkout variational-algorithms
+          new=$(git -C variational-algorithms rev-parse HEAD)
+          echo "old=$old" >> "$GITHUB_OUTPUT"
+          echo "new=$new" >> "$GITHUB_OUTPUT"
+          if [ "$old" = "$new" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Submodule already at $new"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Submodule $old -> $new"
+          fi
+
+      - name: Commit and push
+        id: commit
+        if: steps.bump.outputs.changed == 'true'
+        env:
+          OLD: ${{ steps.bump.outputs.old }}
+          NEW: ${{ steps.bump.outputs.new }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add variational-algorithms
+          git commit -m "Update variational-algorithms submodule to ${NEW:0:7}" \
+                     -m "https://github.com/jmarecek/variational-algorithms/compare/${OLD:0:12}...${NEW:0:12}"
+          git push
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  # A push made with GITHUB_TOKEN does not trigger other workflows, so run the
+  # build explicitly against the commit just pushed.
+  build:
+    name: Build updated course
+    needs: update
+    if: needs.update.outputs.changed == 'true'
+    uses: ./.github/workflows/build.yml
+    with:
+      ref: ${{ needs.update.outputs.sha }}

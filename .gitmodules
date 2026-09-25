@@ -1,0 +1,4 @@
+[submodule "variational-algorithms"]
+	path = variational-algorithms
+	url = https://github.com/jmarecek/variational-algorithms.git
+	branch = main
