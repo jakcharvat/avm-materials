@@ -1,9 +1,9 @@
 name: Update course submodule
 
+# Started by an outside bot whenever the course sources gain a commit, and by hand from the
+# Actions tab. There is no schedule on purpose:
+# GitHub runs cron workflows at unpredictable times.
 on:
-  schedule:
-    # Runs in UTC. Once a day at 07:00 UTC; use "0 * * * *" for hourly.
-    - cron: "0 7 * * *"
   workflow_dispatch:
 
 # Only one update run at a time, so two runs never race on the push.
