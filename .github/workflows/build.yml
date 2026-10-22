@@ -35,11 +35,20 @@ jobs:
           ref: ${{ inputs.ref }}
           submodules: true
 
-      - name: Build whole course and every chapter
+      - name: Build whole course, every chapter, and any solution sheets
         working-directory: variational-algorithms/course
+        # Not `./build.sh all`: its solutions loop runs over an unexpanded
+        # `solutions_*.tex` glob when no solution sheets exist yet, which
+        # fails on a literal "solutions_*" job. Build the parts separately.
         run: |
           set -o pipefail
-          ./build.sh all 2>&1 | tee build-summary.txt
+          {
+            ./build.sh full
+            ./build.sh ch
+            if compgen -G 'solutions_*.tex' > /dev/null; then
+              ./build.sh solutions
+            fi
+          } 2>&1 | tee build-summary.txt
 
       - name: Verify every expected PDF was produced
         # build.sh keeps going after a failed chapter and does not exit non-zero,
@@ -54,6 +63,9 @@ jobs:
           for f in ch[0-9][0-9]_*.tex; do
             ch=${f%.tex}
             expected="$expected $ch slides_$ch"
+          done
+          for f in solutions_*.tex; do
+            [ -e "$f" ] && expected="$expected ${f%.tex}"
           done
           for job in $expected; do
             if [ ! -s "$job.pdf" ]; then
@@ -72,7 +84,7 @@ jobs:
             variational-algorithms/course/overheadsbeamer.pdf
           if-no-files-found: warn
 
-      - name: Upload per-chapter handouts and slides
+      - name: Upload per-chapter handouts, slides and solution sheets
         if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -80,6 +92,7 @@ jobs:
           path: |
             variational-algorithms/course/ch[0-9][0-9]_*.pdf
             variational-algorithms/course/slides_ch[0-9][0-9]_*.pdf
+            variational-algorithms/course/solutions_*.pdf
           if-no-files-found: warn
 
       - name: Upload LaTeX logs on failure
